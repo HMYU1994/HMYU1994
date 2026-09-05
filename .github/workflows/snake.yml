@@ -1,8 +1,8 @@
-name: Generate Snake Animation
+name: Rotate Contribution Arcade
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "7 * * * *"
   workflow_dispatch:
   push:
     branches:
@@ -13,21 +13,79 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Generate arcade games
+        uses: abozanona/pacman-contribution-graph@7332e1de7903ab780c3692a4127a59cc13872daa
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          games: "pacman,bomberman,minesweeper,breakout"
+          hide_month_labels: "false"
+
+      - name: Collect arcade games
+        run: |
+          mkdir -p generated
+          cp dist/*.svg generated/
+
       - name: Generate contribution snake
-        uses: Platane/snk/svg-only@v3
+        uses: Platane/snk/svg-only@d8f6715049803e982ee5ff501b6b9b7d5deeb09b # v3
         with:
           github_user_name: ${{ github.repository_owner }}
           outputs: |
-            dist/github-contribution-grid-snake.svg
-            dist/github-contribution-grid-snake-dark.svg?palette=github-dark
+            generated/snake.svg
+            generated/snake-dark.svg?palette=github-dark
+
+      - name: Generate falling tetrominoes
+        uses: leereilly/contribution-graph-art@01bd3951696f7068ef256478e42da66cc806c527 # v1
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          output_path: generated/tetris.svg
+          tetromino_count: "5"
+          palette: "auto"
+
+      - name: Pick a different game
+        shell: bash
+        run: |
+          games=(snake pacman bomberman minesweeper breakout tetris)
+          previous=""
+          git fetch origin output --depth=1 || true
+          previous="$(git show origin/output:selected-game.txt 2>/dev/null || true)"
+
+          candidates=()
+          for game in "${games[@]}"; do
+            if [[ "$game" != "$previous" ]]; then
+              candidates+=("$game")
+            fi
+          done
+          selected="$(printf '%s\n' "${candidates[@]}" | shuf -n 1)"
+
+          case "$selected" in
+            snake)
+              cp generated/snake.svg generated/current.svg
+              cp generated/snake-dark.svg generated/current-dark.svg
+              ;;
+            tetris)
+              cp generated/tetris.svg generated/current.svg
+              cp generated/tetris.svg generated/current-dark.svg
+              ;;
+            *)
+              cp "generated/${selected}-contribution-graph.svg" generated/current.svg
+              cp "generated/${selected}-contribution-graph-dark.svg" generated/current-dark.svg
+              ;;
+          esac
+
+          printf '%s\n' "$selected" > generated/selected-game.txt
+          echo "Selected game: $selected"
 
       - name: Publish generated files
-        uses: crazy-max/ghaction-github-pages@v4
+        uses: crazy-max/ghaction-github-pages@df5cc2bfa78282ded844b354faee141f06b41865 # v4
         with:
           target_branch: output
-          build_dir: dist
+          build_dir: generated
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
